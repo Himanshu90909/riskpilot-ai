@@ -12,7 +12,7 @@ RiskPilot is positioned as an autonomous risk intelligence layer rather than a d
 
 > **RiskPilot AI helps businesses decide which transactions to trust.**
 
-The experience supports a 3–5 minute interview or hackathon walkthrough: start with executive business impact, open a high-risk transaction, inspect the AI investigation timeline and rationale, run an account-takeover simulation, demonstrate human override, and finish with the developer API surface.
+The experience supports a 3–5 minute interview or hackathon walkthrough. The new `/demo` route opens a guided command center where the agent reveals each signal in sequence, sweeps the risk score from pending to critical, writes the audit state, and then presents held-out synthetic evaluation evidence. Reviewers can continue into the full console for executive impact, transaction context, human override, simulation, and developer API details.
 
 ## What is implemented
 
@@ -80,12 +80,13 @@ No login is required. Open the landing page and select **Open demo**. The fictio
 
 Recommended walkthrough:
 
-1. Open **Overview** and call out `₹3.82 Cr` potential fraud prevented, `12,481` blocked transactions, and the `42 ms` median decision time.
-2. Open the first priority transaction, `TXN-84921`, for Rahul Mehta at Nova Electronics.
-3. Open **AI Investigation** and show the `91 / 100 · CRITICAL` score, signal contributions, timeline, and explanation.
-4. Use **Keep blocked**, **Approve anyway**, or **Request verification** to demonstrate responsible AI and human accountability.
-5. Open **Simulations**, run **Account Takeover**, and show the deterministic `94 / 100 · BLOCK · ₹4.8L` result.
-6. Finish in **Developer API** to show how the risk layer can be integrated into a payment flow.
+1. Open `/demo` first. Let the guided investigation run so the reviewer sees the risk score, evidence trail, decision monitor, and model readout build in real time.
+2. Open **Overview** and call out `₹3.82 Cr` potential fraud prevented, `12,481` blocked transactions, and the `42 ms` median decision time.
+3. Open the first priority transaction, `TXN-84921`, for Rahul Mehta at Nova Electronics.
+4. Open **AI Investigation** and show the `91 / 100 · CRITICAL` score, signal contributions, timeline, and explanation.
+5. Use **Keep blocked**, **Approve anyway**, or **Request verification** to demonstrate responsible AI and human accountability.
+6. Open **Simulations**, run **Account Takeover**, and show the deterministic `94 / 100 · BLOCK · ₹4.8L` result.
+7. Point to the held-out synthetic test set in the guided demo: precision `96.8%`, recall `94.1%`, F1 `95.4%`, and the confusion matrix. Finish in **Developer API** to show how the risk layer can be integrated into a payment flow.
 
 ## Risk engine
 

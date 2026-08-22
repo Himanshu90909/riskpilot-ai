@@ -5,13 +5,14 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import { AppShellPage, LandingPage, PricingPage } from "./pages/Home";
+import { AppShellPage, DemoModePage, LandingPage, PricingPage } from "./pages/Home";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={LandingPage} />
       <Route path="/pricing" component={PricingPage} />
+      <Route path="/demo" component={DemoModePage} />
       <Route path="/app/:section?" component={AppShellPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
