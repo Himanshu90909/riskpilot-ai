@@ -76,7 +76,7 @@ The local demo opens at `http://localhost:3000`.
 
 ## Demo access
 
-No login is required. Open the landing page and select **Open demo**. The fictional workspace is **NovaPay** and the demo operator is **Aarav Kumar · Admin**.
+No login is required. Open the landing page and select **Open demo**. The fictional workspace is **NovaPay** and the demo operator is **Himanshu Suthar · Admin**.
 
 Recommended walkthrough:
 
