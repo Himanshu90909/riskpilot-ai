@@ -159,3 +159,8 @@ RiskPilot uses the **Editorial Trust Layer** direction: Swiss-inspired hierarchy
 The included Track 02 evaluator is runnable from the repository with `node evaluation/run.mjs`. It generates 100,000 deterministic synthetic records, reserves the final 20,000 records as held-out evaluation data, applies a defense-only weighted signal detector at threshold 24, and writes the exact result to `evaluation/results.json`. The current held-out result is precision `93.35%`, recall `88.97%`, F1 `91.11%`, false-positive rate `3.53%`, and false-positive cost `₹81,540` under the documented synthetic cost assumptions. The confusion matrix is 6,363 true positives, 453 false positives, 789 false negatives, and 12,395 true negatives.
 
 A production version could add a FastAPI decision service, PostgreSQL entities and audit storage, signed webhooks, authenticated workspaces, configurable tenant-level risk policies, model monitoring, analyst feedback loops, policy simulation against historical outcomes, and operational integrations with payment gateways. These are intentionally not included in this interview demo so the core story remains fast, deterministic, defense-only, and easy to evaluate.
+
+
+## Deployment
+
+The repository includes `vercel.json` with the Vite build command, `dist/public` output directory, and SPA fallback rewrites so `/demo` and `/app` remain reachable on direct refresh. The production Vercel project is connected to the `main` branch.
