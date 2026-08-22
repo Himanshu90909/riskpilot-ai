@@ -1,9 +1,11 @@
-# RiskPilot AI — Wow-Factor Upgrade Checklist
+# RiskPilot AI — Track 02 Submission Checklist
 
-- [x] Add a guided 3–5 minute demo mode with a clear story arc and progress state.
-- [x] Add an animated live investigation sequence that reveals signals one by one.
-- [x] Add measurable model evaluation evidence: held-out test set metrics, confusion matrix, and false-positive cost.
-- [x] Add a high-impact “risk pulse” visual and stronger decision-state transitions.
-- [x] Make the demo CTAs and key controls route into the showcase flow without dead ends.
-- [x] Re-run TypeScript/build checks and verify desktop/mobile showcase views.
-- [x] Save an upgraded checkpoint and prepare the interview handoff.
+- [x] Define one loss class: account takeover on digital payment transactions.
+- [x] Create a reproducible synthetic dataset generator with labeled risk outcomes and documented feature schema.
+- [x] Implement a defense-only rule-based detector with score, decision, reasons, and no offensive capability.
+- [x] Split records into train/tuning and a sealed held-out test set without leakage.
+- [x] Compute precision, recall, F1, confusion matrix, and false-positive cost from the held-out set.
+- [x] Add an evaluation report with assumptions, threshold, class balance, and limitations.
+- [x] Connect calculated evaluation results to the guided demo and README.
+- [x] Verify reproducibility, build, responsive UI, and final interview walkthrough.
+- [x] Save the completed Track 02 checkpoint.

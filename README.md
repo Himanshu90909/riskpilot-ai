@@ -86,7 +86,13 @@ Recommended walkthrough:
 4. Open **AI Investigation** and show the `91 / 100 · CRITICAL` score, signal contributions, timeline, and explanation.
 5. Use **Keep blocked**, **Approve anyway**, or **Request verification** to demonstrate responsible AI and human accountability.
 6. Open **Simulations**, run **Account Takeover**, and show the deterministic `94 / 100 · BLOCK · ₹4.8L` result.
-7. Point to the held-out synthetic test set in the guided demo: precision `96.8%`, recall `94.1%`, F1 `95.4%`, and the confusion matrix. Finish in **Developer API** to show how the risk layer can be integrated into a payment flow.
+7. Point to the held-out synthetic test set in the guided demo: precision `93.35%`, recall `88.97%`, F1 `91.11%`, and the confusion matrix. Finish in **Developer API** to show how the risk layer can be integrated into a payment flow.
+
+## Track 02 evaluation
+
+The submission is intentionally focused on one loss class: account takeover on digital payment transactions. `evaluation/run.mjs` is the reproducible evaluation entry point. It keeps data generation, detector logic, threshold, cost model, and metrics in code so a reviewer can rerun the result instead of trusting a screenshot. `evaluation/results.json` is the generated artifact used by the guided UI.
+
+The evaluator uses a deterministic synthetic dataset because this is a hackathon demo environment with no real customer data. Every output is labeled as synthetic and should not be read as a production fraud estimate.
 
 ## Risk engine
 
@@ -150,4 +156,6 @@ RiskPilot uses the **Editorial Trust Layer** direction: Swiss-inspired hierarchy
 
 ## Future roadmap
 
-A production version could add a FastAPI decision service, PostgreSQL entities and audit storage, signed webhooks, authenticated workspaces, configurable tenant-level risk policies, real model evaluation, analyst feedback loops, policy simulation against historical outcomes, and operational integrations with payment gateways. These are intentionally not included in this interview demo so the core story remains fast, deterministic, and easy to evaluate.
+The included Track 02 evaluator is runnable from the repository with `node evaluation/run.mjs`. It generates 100,000 deterministic synthetic records, reserves the final 20,000 records as held-out evaluation data, applies a defense-only weighted signal detector at threshold 24, and writes the exact result to `evaluation/results.json`. The current held-out result is precision `93.35%`, recall `88.97%`, F1 `91.11%`, false-positive rate `3.53%`, and false-positive cost `₹81,540` under the documented synthetic cost assumptions. The confusion matrix is 6,363 true positives, 453 false positives, 789 false negatives, and 12,395 true negatives.
+
+A production version could add a FastAPI decision service, PostgreSQL entities and audit storage, signed webhooks, authenticated workspaces, configurable tenant-level risk policies, model monitoring, analyst feedback loops, policy simulation against historical outcomes, and operational integrations with payment gateways. These are intentionally not included in this interview demo so the core story remains fast, deterministic, defense-only, and easy to evaluate.
