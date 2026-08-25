@@ -111,3 +111,16 @@ temp/
 # Manus version file (auto-generated, not part of source)
 client/public/__manus__/version.json
 .project-config.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+ml/data/*.csv
+ml/__pycache__/
+llm/__pycache__/
+server/__pycache__/
+razorpay/__pycache__/
+
+# ML model artifacts (large binary)
+# model.pkl and scaler.pkl are kept for demo reproducibility
