@@ -31,7 +31,8 @@ llm/
 ### Module Descriptions
 
 1. **`llm/risk_analyst.py`**
-   - Connects to Google Gemini API using `google-genai` (`gemini-2.0-flash`).
+   - Connects to Google Gemini API using `google-genai` (`gemini-2.5-flash` by default).
+   - Accepts current Google AI Studio key formats, including `AQ.` keys, through `GEMINI_API_KEY` or the `RiskAnalyst(api_key=...)` constructor.
    - Accepts flexible transaction context dictionaries containing amount, customer profile, device telemetry, location, velocity, failed attempts, merchant info, risk score, risk level, and AI decision.
    - Outputs structured JSON with:
      - `summary`: Concise 2-3 sentence investigation summary.
@@ -75,7 +76,7 @@ pip install -r llm/requirements.txt
 3. Click **Get API key** and create a new key.
 4. Export the key in your terminal or environment configuration:
    ```bash
-   export GEMINI_API_KEY="your_gemini_api_key_here"
+   export GEMINI_API_KEY="your_gemini_api_key_here"  # Supports current AQ. keys and legacy AIza keys
    ```
 
 *Note: If `GEMINI_API_KEY` is not set, RiskPilot AI will automatically operate using the rule-based fallback engine without throwing errors.*

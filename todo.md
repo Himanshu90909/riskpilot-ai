@@ -9,3 +9,12 @@
 - [x] Connect calculated evaluation results to the guided demo and README.
 - [x] Verify reproducibility, build, responsive UI, and final interview walkthrough.
 - [x] Save the completed Track 02 checkpoint.
+
+## Chatbot reliability
+
+- [ ] Support modern Google AI Studio AQ-format keys in the Gemini chatbot backend
+- [ ] Default the chatbot to a current Gemini model and preserve schema-validated output
+- [ ] Live-test the chatbot with the configured Gemini key and confirm non-fallback output
+- [ ] Push the chatbot compatibility fix to GitHub
+- [ ] Configure GEMINI_API_KEY in the deployed Vercel environment without committing the secret
+- [ ] Verify the deployed chatbot and rotate the exposed GitHub token

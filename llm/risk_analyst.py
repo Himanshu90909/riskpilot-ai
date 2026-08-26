@@ -104,12 +104,13 @@ Return a JSON object with these fields:
             self.model_name = model_name or "openai/gpt-oss-120b"
             logger.info("Initialized Groq LLM backend with model: %s", self.model_name)
 
-        # 2. Try Google Gemini
-        elif os.getenv("GEMINI_API_KEY") and os.getenv("GEMINI_API_KEY", "").startswith("AIza"):
-            gemini_key = os.getenv("GEMINI_API_KEY")
+        # 2. Try Google Gemini / AI Studio. Modern AI Studio keys may use AQ. as well as AIza.
+        gemini_key = api_key or os.getenv("GEMINI_API_KEY")
+        if gemini_key and self._backend == "none":
+
             self._backend = "gemini"
             self.api_key = gemini_key
-            self.model_name = model_name or "gemini-2.0-flash"
+            self.model_name = model_name or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
             try:
                 from google import genai
                 self._client = genai.Client(api_key=self.api_key)
