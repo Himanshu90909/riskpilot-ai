@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from server.risk_engine import RiskEngine
 from server.audit_store import AuditStore, AuditEntry
 from server.razorpay_integration import RazorpayIntegration
+from server.v2_governance import AppendOnlyAudit, EvidenceV2, PolicyV2, RiskContextV2, ReviewRequestV2, DecisionV2, score_v2, summarize_v2
 
 
 # Initialize FastAPI Application
@@ -39,6 +40,7 @@ app.add_middleware(
 # Initialize Core Services
 risk_engine = RiskEngine()
 audit_store = AuditStore()
+v2_audit = AppendOnlyAudit()
 razorpay_service = RazorpayIntegration()
 
 
@@ -281,6 +283,29 @@ async def create_razorpay_payment(request: RazorpayOrderRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process Razorpay payment order: {str(e)}"
         )
+
+
+@app.post("/v2/risk/analyze", response_model=DecisionV2, summary="Governed explainable V2 risk decision", tags=["RiskPilot v2"])
+async def analyze_risk_v2(request: RiskContextV2):
+    decision = score_v2(request)
+    v2_audit.append("RISK_DECISION", "risk_engine", decision.model_dump())
+    return decision
+
+
+@app.post("/v2/investigations/summary", response_model=dict, summary="Evidence-cited V2 investigation summary", tags=["RiskPilot v2"])
+async def investigation_summary_v2(decision: DecisionV2, evidence: List[EvidenceV2] = []):
+    return summarize_v2(decision, evidence).model_dump()
+
+
+@app.post("/v2/governance/review", response_model=dict, summary="Rationale-required analyst review", tags=["RiskPilot v2"])
+async def review_v2(request: ReviewRequestV2):
+    event = v2_audit.append("ANALYST_REVIEW", request.case_id, request.model_dump(), request.case_id)
+    return {"ok": True, "audit_event": event}
+
+
+@app.get("/v2/audit", response_model=List[dict], summary="Append-only V2 audit events", tags=["RiskPilot v2"])
+async def audit_v2():
+    return v2_audit.list()
 
 
 if __name__ == "__main__":
