@@ -9,7 +9,8 @@ import uuid
 from typing import Any, Dict, List, Optional, Literal
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query, status
+from fastapi import FastAPI, Header, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -17,6 +18,7 @@ from server.risk_engine import RiskEngine
 from server.audit_store import AuditStore, AuditEntry
 from server.razorpay_integration import RazorpayIntegration
 from server.v2_governance import AppendOnlyAudit, EvidenceV2, PolicyV2, RiskContextV2, ReviewRequestV2, DecisionV2, score_v2, summarize_v2
+from razorpay.webhook_handler import RazorpayWebhookHandler
 
 
 # Initialize FastAPI Application
@@ -31,8 +33,8 @@ app = FastAPI(
 # Enable CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[origin.strip() for origin in os.environ.get("CORS_ORIGINS", "*").split(",") if origin.strip()],
+    allow_credentials=os.environ.get("CORS_ORIGINS", "*").strip() != "*",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -42,6 +44,11 @@ risk_engine = RiskEngine()
 audit_store = AuditStore()
 v2_audit = AppendOnlyAudit()
 razorpay_service = RazorpayIntegration()
+webhook_handler = RazorpayWebhookHandler(
+    webhook_secret=os.environ.get("RAZORPAY_WEBHOOK_SECRET"),
+    risk_engine=risk_engine,
+    audit_store=audit_store,
+)
 
 
 # --- Pydantic Request & Response Models ---
@@ -166,6 +173,27 @@ async def health_check():
         "model_version": risk_engine.model_version,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@app.get("/v1/integrations/status", summary="Integration configuration status", tags=["System"])
+async def integration_status():
+    """Return safe, non-secret readiness information for the live demo."""
+    razorpay_configured = not razorpay_service.is_placeholder_key
+    return {
+        "api": {"status": "ready", "docs": "/docs"},
+        "risk_engine": {"status": "ready", "model_loaded": risk_engine.is_ml_loaded, "model_version": risk_engine.model_version},
+        "razorpay": {"status": "configured" if razorpay_configured else "simulation", "test_mode": True},
+        "webhook": {"status": "configured" if bool(os.environ.get("RAZORPAY_WEBHOOK_SECRET")) else "not_configured", "signature": "HMAC-SHA256"},
+        "llm": {"provider": os.environ.get("LLM_PROVIDER", "deterministic"), "configured": any(bool(os.environ.get(key)) for key in ("GEMINI_API_KEY", "GROQ_API_KEY", "OPENAI_API_KEY"))},
+    }
+
+
+@app.post("/v1/razorpay/webhook", summary="Verify and process Razorpay webhook", tags=["Razorpay Integration"])
+async def razorpay_webhook(request: Request, x_razorpay_signature: Optional[str] = Header(default=None)):
+    """Process only signature-verified Razorpay events and append them to the audit store."""
+    raw_body = await request.body()
+    response_body, response_status = webhook_handler.process_webhook(raw_body, signature=x_razorpay_signature)
+    return JSONResponse(status_code=response_status, content=response_body)
 
 
 @app.post("/v1/risk/analyze", response_model=RiskAnalysisResponse, summary="Analyze Transaction Risk", tags=["Risk Engine"])
