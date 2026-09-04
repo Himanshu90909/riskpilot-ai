@@ -40,6 +40,10 @@ export function getIntegrationStatus() { return request<Record<string, unknown>>
 export function analyzeRisk(payload: RiskPayload) {
   return request<Record<string, unknown>>("/v1/risk/analyze", { method: "POST", body: JSON.stringify(payload) });
 }
+export function explainInvestigation(payload: RiskPayload) {
+  return request<Record<string, unknown>>("/v1/investigations/explain", { method: "POST", body: JSON.stringify({ context: payload }) });
+}
+
 export function createRazorpayOrder(payload: RiskPayload & { currency: string; notes?: Record<string, string> }) {
   return request<Record<string, unknown>>("/v1/razorpay/create-payment", { method: "POST", body: JSON.stringify(payload) });
 }
