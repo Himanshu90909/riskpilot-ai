@@ -50,6 +50,9 @@ def engineer_features(txn_data: Dict[str, Any]) -> pd.DataFrame:
     failed_attempts = int(txn_data.get("failed_attempts_24h", txn_data.get("failed_attempts", 0)))
     account_age_days = int(txn_data.get("account_age_days", 30))
     merchant_risk_score = float(txn_data.get("merchant_risk_score", 0.1))
+    # Public API accepts merchant risk as 0-100; training data uses 0-1.
+    if merchant_risk_score > 1.0 and merchant_risk_score <= 100.0:
+        merchant_risk_score /= 100.0
     behavioral_deviation = float(txn_data.get("behavioral_deviation", 0.1))
 
     if behavioral_deviation > 1.0 and behavioral_deviation <= 100.0:
