@@ -19,6 +19,7 @@ from server.audit_store import AuditStore, AuditEntry
 from server.razorpay_integration import RazorpayIntegration
 from server.v2_governance import AppendOnlyAudit, EvidenceV2, PolicyV2, RiskContextV2, ReviewRequestV2, DecisionV2, score_v2, summarize_v2
 from razorpay.webhook_handler import RazorpayWebhookHandler
+from llm.risk_analyst import RiskAnalyst
 
 
 # Initialize FastAPI Application
@@ -49,6 +50,7 @@ webhook_handler = RazorpayWebhookHandler(
     risk_engine=risk_engine,
     audit_store=audit_store,
 )
+risk_analyst = RiskAnalyst()
 
 
 # --- Pydantic Request & Response Models ---
@@ -181,6 +183,11 @@ def normalize_assessment(assessment: Dict[str, Any], transaction_id: str, timest
     }
 
 
+class InvestigationRequest(BaseModel):
+    """Transaction context for a structured AI/rule-based investigation."""
+    context: Dict[str, Any] = Field(default_factory=dict)
+
+
 # --- Endpoints ---
 
 @app.get("/v1/health", summary="Health Check Endpoint", tags=["System"])
@@ -206,7 +213,7 @@ async def integration_status():
         "risk_engine": {"status": "ready", "model_loaded": risk_engine.is_ml_loaded, "model_version": risk_engine.model_version},
         "razorpay": {"status": "configured" if razorpay_configured else "simulation", "test_mode": True},
         "webhook": {"status": "configured" if bool(os.environ.get("RAZORPAY_WEBHOOK_SECRET")) else "not_configured", "signature": "HMAC-SHA256"},
-        "llm": {"provider": os.environ.get("LLM_PROVIDER", "deterministic"), "configured": any(bool(os.environ.get(key)) for key in ("GEMINI_API_KEY", "GROQ_API_KEY", "OPENAI_API_KEY"))},
+        "llm": {"provider": getattr(risk_analyst, "_backend", "none"), "configured": risk_analyst.is_llm_active},
     }
 
 
@@ -216,6 +223,18 @@ async def razorpay_webhook(request: Request, x_razorpay_signature: Optional[str]
     raw_body = await request.body()
     response_body, response_status = webhook_handler.process_webhook(raw_body, signature=x_razorpay_signature)
     return JSONResponse(status_code=response_status, content=response_body)
+
+
+@app.post("/v1/investigations/explain", summary="Generate structured investigation explanation", tags=["Risk Engine"])
+async def explain_investigation(request: InvestigationRequest):
+    """Run the configured LLM adapter with a deterministic defense-only fallback."""
+    context = dict(request.context)
+    transaction_id = str(context.get("transaction_id") or f"txn_{uuid.uuid4().hex[:12]}")
+    context["transaction_id"] = transaction_id
+    assessment = normalize_assessment(risk_engine.analyze_transaction(context), transaction_id)
+    context.update(assessment)
+    analysis = risk_analyst.analyze_transaction(context)
+    return {"transaction_id": transaction_id, "risk": RiskAnalysisResponse(**assessment).model_dump(), "analysis": analysis}
 
 
 @app.post("/v1/risk/analyze", response_model=RiskAnalysisResponse, summary="Analyze Transaction Risk", tags=["Risk Engine"])
