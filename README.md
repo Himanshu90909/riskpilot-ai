@@ -171,3 +171,25 @@ A production version could add a FastAPI decision service, PostgreSQL entities a
 ## Deployment
 
 The repository includes `vercel.json` with the Vite build command, `dist/public` output directory, and SPA fallback rewrites so `/demo` and `/app` remain reachable on direct refresh. The production Vercel project is connected to the `main` branch.
+
+## Live integration path
+
+The reviewer-facing live API lab is available at /live. It exercises the FastAPI service instead of only rendering mock data.
+
+### Local run
+
+    pnpm install
+    pnpm run api:dev
+    pnpm run dev
+
+Open http://localhost:3000/live. The page calls:
+
+- GET /v1/health and GET /v1/integrations/status
+- POST /v1/risk/analyze
+- POST /v1/razorpay/create-payment
+- POST /v1/razorpay/webhook with HMAC signature verification
+- GET /v1/audit/recent
+
+Set RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, and RAZORPAY_WEBHOOK_SECRET to use Razorpay Test Mode. Without credentials, the order endpoint explicitly reports deterministic simulation; it never presents a fake remote payment as real. Set VITE_API_BASE_URL when the FastAPI service is deployed separately.
+
+The Vercel entrypoint is api/index.py and the API rewrite is placed before the SPA fallback. Secrets are read from environment variables and are not committed.
