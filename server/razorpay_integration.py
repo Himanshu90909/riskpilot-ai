@@ -81,8 +81,8 @@ class RazorpayIntegration:
         )
 
         decision = risk_assessment.get("decision", "review")
-        risk_score = risk_assessment.get("risk_score", 0.0)
-        risk_level = risk_assessment.get("risk_level", "medium")
+        risk_score = risk_assessment.get("risk_score", risk_assessment.get("score", 0.0))
+        risk_level = str(risk_assessment.get("risk_level", "medium")).lower()
 
         test_warning = None
         if self.is_placeholder_key:
