@@ -6,6 +6,7 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { AppShellPage, DemoModePage, LandingPage, PricingPage } from "./pages/Home";
+import { LiveApiPage } from "./pages/LiveApiPage";
 
 function Router() {
   return (
@@ -13,6 +14,7 @@ function Router() {
       <Route path="/" component={LandingPage} />
       <Route path="/pricing" component={PricingPage} />
       <Route path="/demo" component={DemoModePage} />
+      <Route path="/live" component={LiveApiPage} />
       <Route path="/app/:section?" component={AppShellPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
