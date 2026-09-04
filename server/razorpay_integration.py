@@ -4,6 +4,7 @@ Handles Razorpay test-mode order creation after pre-screening via RiskEngine.
 """
 
 import os
+from datetime import datetime, timezone
 import uuid
 import logging
 from typing import Any, Dict, Optional, Tuple
@@ -163,7 +164,7 @@ class RazorpayIntegration:
                         "status": "created",
                         "attempts": 0,
                         "notes": rzp_notes,
-                        "created_at": int(httpx.ByteStream.time() if hasattr(httpx, "ByteStream") else 1700000000),
+                        "created_at": int(datetime.now(timezone.utc).timestamp()),
                         "mode": "test_simulation",
                     }
                     return {
