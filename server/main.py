@@ -95,7 +95,7 @@ class RiskAnalysisResponse(BaseModel):
     risk_level: Literal["low", "medium", "high", "critical"] = Field(..., description="Categorical risk band")
     decision: Literal["approve", "review", "block"] = Field(..., description="Automated decision")
     reasons: List[str] = Field(..., description="Contributing risk factors and explanation reasons")
-    confidence: float = Field(..., description="Model assessment confidence score (0.0 - 1.0)")
+    confidence: Optional[float] = Field(None, description="Calibrated model confidence when available (0.0 - 1.0)")
     model_version: str = Field(..., description="Model or engine version used for scoring")
     timestamp: str = Field(..., description="ISO datetime UTC timestamp of evaluation")
 
@@ -159,6 +159,28 @@ class RazorpayOrderResponse(BaseModel):
     test_mode_warning: Optional[str] = None
 
 
+def normalize_assessment(assessment: Dict[str, Any], transaction_id: str, timestamp: Optional[str] = None) -> Dict[str, Any]:
+    """Adapt the engine's internal score contract to the public API contract."""
+    score = float(assessment.get("risk_score", assessment.get("score", assessment.get("fraud_risk_score", 0.0))))
+    risk_level = str(assessment.get("risk_level", "medium")).lower()
+    if risk_level not in {"low", "medium", "high", "critical"}:
+        risk_level = "medium"
+    decision = str(assessment.get("decision", assessment.get("recommended_action", "review"))).lower()
+    if decision not in {"approve", "review", "block"}:
+        decision = "review"
+    return {
+        **assessment,
+        "transaction_id": transaction_id,
+        "risk_score": round(score, 1),
+        "score": round(score, 1),
+        "risk_level": risk_level,
+        "decision": decision,
+        "reasons": list(assessment.get("reasons", [])),
+        "confidence": assessment.get("confidence"),
+        "timestamp": timestamp or assessment.get("timestamp") or datetime.now(timezone.utc).isoformat(),
+    }
+
+
 # --- Endpoints ---
 
 @app.get("/v1/health", summary="Health Check Endpoint", tags=["System"])
@@ -208,9 +230,11 @@ async def analyze_risk(request: TransactionRequest):
         txn_dict["transaction_id"] = txn_id
 
         # Analyze transaction
-        assessment = risk_engine.analyze_transaction(txn_dict)
-        assessment["transaction_id"] = txn_id
-        assessment["timestamp"] = datetime.now(timezone.utc).isoformat()
+        assessment = normalize_assessment(
+            risk_engine.analyze_transaction(txn_dict),
+            txn_id,
+            datetime.now(timezone.utc).isoformat(),
+        )
 
         # Log to audit store
         audit_store.record_decision(
@@ -289,9 +313,11 @@ async def create_razorpay_payment(request: RazorpayOrderRequest):
             audit_store=audit_store,
         )
 
-        risk_assessment_data = result["risk_assessment"]
-        if "timestamp" not in risk_assessment_data:
-            risk_assessment_data["timestamp"] = datetime.now(timezone.utc).isoformat()
+        risk_assessment_data = normalize_assessment(
+            result["risk_assessment"],
+            result["transaction_id"],
+            datetime.now(timezone.utc).isoformat(),
+        )
 
         risk_response = RiskAnalysisResponse(**risk_assessment_data)
 
