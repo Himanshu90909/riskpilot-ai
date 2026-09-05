@@ -8,6 +8,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { AppShellPage, DemoModePage, LandingPage, PricingPage } from "./pages/Home";
 import { LiveApiPage } from "./pages/LiveApiPage";
 import ResponseLabPage from "./pages/ResponseLabPage";
+import ReviewModePage from "./pages/ReviewModePage";
 
 function Router() {
   return (
@@ -17,6 +18,7 @@ function Router() {
       <Route path="/demo" component={DemoModePage} />
       <Route path="/live" component={LiveApiPage} />
       <Route path="/response-lab" component={ResponseLabPage} />
+      <Route path="/review" component={ReviewModePage} />
       <Route path="/app/:section?" component={AppShellPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
