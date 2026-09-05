@@ -267,28 +267,74 @@ export const apiRequest = `{
 }`;
 
 export const apiResponse = `{
-  "transaction_id": "txn_8ab69818c512",
+  "transaction_id": "txn_49c64bfa2420",
   "risk_score": 99.5,
   "risk_level": "critical",
   "decision": "block",
   "ai_recommendation": "block",
+  "recommended_action": "refuse_order_creation",
   "risk_factors": [
     "High-value transaction amount (₹480,000.00)",
     "Severe velocity spike (12 attempts in past hour)",
     "Multiple recent payment failures (5 in 24h)"
   ],
   "evidence": [
-    { "signal": "amount", "value": 480000.0, "detail": "Transaction amount (INR)" },
-    { "signal": "velocity", "value": 12, "detail": "Transactions in the past hour" },
-    { "signal": "failed_attempts", "value": 5, "detail": "Failed payment attempts (24h)" }
+    {
+      "signal": "amount",
+      "value": 480000.0,
+      "detail": "Transaction amount (INR)"
+    },
+    {
+      "signal": "velocity",
+      "value": 12,
+      "detail": "Transactions in the past hour"
+    },
+    {
+      "signal": "failed_attempts",
+      "value": 5,
+      "detail": "Failed payment attempts (24h)"
+    },
+    {
+      "signal": "account_age_days",
+      "value": 2,
+      "detail": "Customer account age in days"
+    },
+    {
+      "signal": "merchant_risk_score",
+      "value": 65.0,
+      "detail": "Merchant risk rating (0-100)"
+    },
+    {
+      "signal": "behavioral_deviation",
+      "value": 0.82,
+      "detail": "Behavioral deviation score (0-1)"
+    }
   ],
   "governance": {
     "policy_version": "gov_policy_v1.0",
+    "risk_band": "critical",
     "ai_recommendation": "block",
-    "final_decision": "block"
+    "final_decision": "block",
+    "step_up_required": false,
+    "human_review_required": true,
+    "ai_recommendation_differs": false,
+    "rules": [
+      "0-30 LOW → APPROVE",
+      "31-60 MEDIUM → REVIEW (human analyst)",
+      "61-80 HIGH → STEP-UP (additional verification required)",
+      "81-100 CRITICAL → BLOCK"
+    ],
+    "notes": [
+      "Analyst review path available; any human override is preserved in the audit trail."
+    ]
   },
   "policy_version": "gov_policy_v1.0",
+  "reasons": [
+    "High-value transaction amount (₹480,000.00)",
+    "Severe velocity spike (12 attempts in past hour)",
+    "Multiple recent payment failures (5 in 24h)"
+  ],
   "model_version": "ml_model_v1.0",
-  "timestamp": "2026-09-05T14:18:00.658956+00:00",
-  "latency_ms": 3.2
+  "timestamp": "2026-09-05T14:27:10.048971+00:00",
+  "latency_ms": 2.7
 }`;
