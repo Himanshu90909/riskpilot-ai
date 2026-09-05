@@ -48,3 +48,13 @@ export function createRazorpayOrder(payload: RiskPayload & { currency: string; n
   return request<Record<string, unknown>>("/v1/razorpay/create-payment", { method: "POST", body: JSON.stringify(payload) });
 }
 export function getRecentAudit() { return request<Record<string, unknown>>("/v1/audit/recent?limit=10"); }
+
+export function runInvestigation(payload: RiskPayload) {
+  return request<Record<string, unknown>>("/v1/investigations/run", { method: "POST", body: JSON.stringify(payload) });
+}
+export function judgeRun(payload?: Record<string, unknown>) {
+  return request<Record<string, unknown>>("/v1/investigations/judge-run", { method: "POST", body: JSON.stringify(payload || {}) });
+}
+export function getCustomerRiskProfile(customerId: string) {
+  return request<Record<string, unknown>>(`/v1/profiles/customer/${encodeURIComponent(customerId)}`);
+}

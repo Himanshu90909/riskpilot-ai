@@ -161,31 +161,18 @@ class AuditStore:
         with self._lock:
             entry = self._entries.get(transaction_id)
             if not entry:
-                entry = AuditEntry(
-                    transaction_id=transaction_id,
-                    timestamp=now_str,
-                    ai_decision="unknown",
-                    human_decision=human_decision,
-                    action_taken=human_decision,
-                    risk_score=0.0,
-                    risk_level="unknown",
-                    model_version="human_override",
-                    reasons=["Manually created entry via human override"],
-                    is_overridden=True,
-                    override_reason=reason,
-                    analyst_id=analyst_id,
-                    overridden_at=now_str,
-                )
-                self._entries[transaction_id] = entry
-                self._order.append(transaction_id)
-            else:
-                entry.human_decision = human_decision
-                entry.action_taken = human_decision
-                entry.is_overridden = True
-                entry.override_reason = reason
-                entry.analyst_id = analyst_id
-                entry.overridden_at = now_str
+                # Data integrity: a human override must reference an existing AI decision.
+                # Overriding a transaction that was never evaluated would fabricate an
+                # audit record, so we refuse and let the API return 404.
+                return None
 
+            entry.human_decision = human_decision
+            entry.action_taken = human_decision
+            entry.is_overridden = True
+            entry.override_reason = reason
+            entry.analyst_id = analyst_id
+            entry.overridden_at = now_str
+            # Original AI decision, risk score, and timestamp are intentionally preserved.
             return entry
 
     def get_logs(self) -> List[Dict[str, Any]]:

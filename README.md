@@ -55,6 +55,8 @@ Demo Mode powers the guided `/demo` walkthrough so the judge experience starts i
 
 ## Architecture
 
+**Canonical services (no duplicates):** `server/` is the single FastAPI risk service and hosts the only risk engine. `razorpay/risk_gateway.py` is the CLI-demo adapter that calls the *same* `server.risk_engine` for terminal walkthroughs; `api/index.py` is only the Vercel deployment entrypoint that re-exports `server.main:app`. Frontend demo data (`client/src/lib/mockData.ts`) is visualization-only — every decision in the live flow comes from the backend.
+
 ```text
 Customer checkout
       ↓
@@ -149,8 +151,9 @@ No login is required. Open the landing page and select **Open demo**. The fictio
 
 Recommended walkthrough:
 
+0. **Judge Mode (fastest):** with the backend running, open `/live` and click **Run Judge Mode flow** — one request executes the entire closed loop (ML risk engine → agent tool calls → governance → Razorpay gate → webhook verification → audit → profile update) and returns a per-step timeline with measured latencies and honest mode labels. `DEMO.md` contains the full 3-minute script.
 1. Open `/demo` first. Let the guided investigation run so the reviewer sees the risk score, evidence trail, decision monitor, and model readout build in real time.
-2. Open **Overview** and call out `₹3.82 Cr` potential fraud prevented, `12,481` blocked transactions, and the `42 ms` median decision time.
+2. Open **Overview** — the KPI strip (`₹3.82 Cr` prevented, `12,481` blocked, `42 ms` decision time) is **explicitly labeled synthetic demo data**; it illustrates the workflow, not production performance.
 3. Open the first priority transaction, `TXN-84921`, for Rahul Mehta at Nova Electronics.
 4. Open **AI Investigation** and show the `91 / 100 · CRITICAL` score, per-signal contributions, timeline, and explanation.
 5. Use **Keep blocked**, **Approve anyway**, or **Request verification** to demonstrate responsible AI and human accountability.
@@ -305,6 +308,21 @@ api/index.py             # Vercel entrypoint for the FastAPI service
 
 RiskPilot uses the **Editorial Trust Layer** direction: Swiss-inspired hierarchy, deep ink navigation, warm paper surfaces, signal teal `#19C6B1`, IBM Plex data typography, Space Grotesk display typography, and semantic risk colors. The interface intentionally avoids generic purple gradients, excessive rounded cards, and vague AI language.
 
+## Testing
+
+The backend test suite covers the risk engine (determinism, score bands, closed-loop profiles), webhook security (valid/invalid/missing signature, duplicate idempotency, malformed payloads, secret-leak checks), the agent investigation schema (LLM-never-scores, measured latencies), and the API contract (validation errors, override field preservation, Razorpay risk gate, judge-flow pipeline):
+
+```bash
+pip install -r server/requirements.txt pytest
+pytest tests/ -v
+```
+
+The Razorpay Test Mode gateway + webhook + audit flow also has a CLI end-to-end run:
+
+```bash
+python razorpay/demo_flow.py
+```
+
 ## Future roadmap
 
 A production version could add PostgreSQL persistence, authenticated multi-tenant workspaces, tenant-level risk policies, model monitoring, analyst feedback loops, and policy simulation against historical outcomes. These are intentionally out of scope for this buildathon submission so the core story remains fast, deterministic, defense-only, and easy to evaluate.
@@ -327,10 +345,14 @@ pnpm run dev
 
 Open http://localhost:3000/live. The page calls:
 
-- `GET /v1/health` and `GET /v1/integrations/status`
-- `POST /v1/risk/analyze`
-- `POST /v1/razorpay/create-payment`
-- `POST /v1/razorpay/webhook` with HMAC signature verification
+- `GET /v1/health` and `GET /v1/integrations/status` (reports the honest execution mode: `DEMO_MODE` / `TEST_MODE_PARTIAL` / `RAZORPAY_TEST_MODE`)
+- `POST /v1/risk/analyze` — authoritative risk decision (ML model + rule fallback, measured latency, closed-loop profile update)
+- `POST /v1/investigations/run` — real agent tool calls (customer history, device, location, velocity, merchant, account risk, deterministic ML score, risk case, audit event) with per-step measured latency
+- `POST /v1/investigations/judge-run` — one-click closed loop: transaction → risk engine → agent → governance → Razorpay Test Mode action → webhook verification → audit → profile update, each step labeled `real` / `razorpay_test_mode` / `labeled_simulation` / `not_configured_skipped`
+- `GET /v1/investigations/tools` — the agent tool registry (transparency)
+- `GET /v1/profiles/customer/{id}` and `GET /v1/profiles/merchant/{id}` — closed-loop risk profiles
+- `POST /v1/razorpay/create-payment` — risk-gated Razorpay Test Mode order creation (refuses on BLOCK; real test API with credentials, clearly-labeled simulation without)
+- `POST /v1/razorpay/webhook` — HMAC-SHA256 signature verification (constant-time compare) + idempotent duplicate protection
 - `GET /v1/audit/recent`
 
 Set `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET` to use Razorpay Test Mode. Without credentials, the order endpoint explicitly reports deterministic simulation; it never presents a fake remote payment as real. Set `VITE_API_BASE_URL` when the FastAPI service is deployed separately. Set `GEMINI_API_KEY` or `GROQ_API_KEY` to activate the LLM investigation agent; without a key the deterministic fallback generator is used.

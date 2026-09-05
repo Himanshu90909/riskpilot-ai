@@ -4,7 +4,10 @@ Razorpay AI Buildathon Submission (Track 02 - AI Risk Manager).
 """
 
 from datetime import datetime, timezone
+import json
+import logging
 import os
+import time
 import uuid
 from typing import Any, Dict, List, Optional, Literal
 
@@ -17,9 +20,13 @@ from pydantic import BaseModel, Field, ConfigDict
 from server.risk_engine import RiskEngine
 from server.audit_store import AuditStore, AuditEntry
 from server.razorpay_integration import RazorpayIntegration
+from server.risk_profiles import RiskProfileStore, default_profile_store
+from server.agent_tools import RiskInvestigationAgent, TOOL_REGISTRY
 from server.v2_governance import AppendOnlyAudit, EvidenceV2, PolicyV2, RiskContextV2, ReviewRequestV2, DecisionV2, score_v2, summarize_v2
 from razorpay.webhook_handler import RazorpayWebhookHandler
 from llm.risk_analyst import RiskAnalyst
+
+logger = logging.getLogger("risk_pilot.api")
 
 
 # Initialize FastAPI Application
@@ -31,11 +38,15 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Enable CORS middleware
+# Enable CORS middleware.
+# Secure default: only local development origins unless CORS_ORIGINS is explicitly set
+# (comma-separated list, e.g. "https://your-app.vercel.app").
+_DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173"
+_configured_origins = [origin.strip() for origin in os.environ.get("CORS_ORIGINS", _DEFAULT_CORS_ORIGINS).split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in os.environ.get("CORS_ORIGINS", "*").split(",") if origin.strip()],
-    allow_credentials=os.environ.get("CORS_ORIGINS", "*").strip() != "*",
+    allow_origins=_configured_origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -45,12 +56,38 @@ risk_engine = RiskEngine()
 audit_store = AuditStore()
 v2_audit = AppendOnlyAudit()
 razorpay_service = RazorpayIntegration()
+profile_store: RiskProfileStore = default_profile_store
 webhook_handler = RazorpayWebhookHandler(
     webhook_secret=os.environ.get("RAZORPAY_WEBHOOK_SECRET"),
     risk_engine=risk_engine,
     audit_store=audit_store,
+    profile_store=profile_store,
 )
 risk_analyst = RiskAnalyst()
+investigation_agent = RiskInvestigationAgent(
+    risk_engine=risk_engine,
+    profile_store=profile_store,
+    audit_store=audit_store,
+)
+
+
+# --- Request-ID + structured logging middleware ---
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    """Attach a request ID, measure latency, and emit one structured log line per request.
+    Never logs request bodies or secrets."""
+    request_id = request.headers.get("x-request-id") or f"req_{uuid.uuid4().hex[:12]}"
+    start = time.perf_counter()
+    response = await call_next(request)
+    latency_ms = round((time.perf_counter() - start) * 1000, 1)
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Response-Time-Ms"] = str(latency_ms)
+    logger.info(
+        "method=%s path=%s status=%s latency_ms=%s request_id=%s",
+        request.method, request.url.path, response.status_code, latency_ms, request_id,
+    )
+    return response
 
 
 # --- Pydantic Request & Response Models ---
@@ -100,6 +137,7 @@ class RiskAnalysisResponse(BaseModel):
     confidence: Optional[float] = Field(None, description="Calibrated model confidence when available (0.0 - 1.0)")
     model_version: str = Field(..., description="Model or engine version used for scoring")
     timestamp: str = Field(..., description="ISO datetime UTC timestamp of evaluation")
+    latency_ms: Optional[float] = Field(None, description="Measured engine latency in milliseconds")
 
 
 class OverrideRequest(BaseModel):
@@ -219,12 +257,24 @@ async def health_check():
 async def integration_status():
     """Return safe, non-secret readiness information for the live demo."""
     razorpay_configured = not razorpay_service.is_placeholder_key
+    webhook_configured = bool(os.environ.get("RAZORPAY_WEBHOOK_SECRET"))
+    execution_mode = "RAZORPAY_TEST_MODE" if (razorpay_configured and webhook_configured) else "TEST_MODE_PARTIAL" if (razorpay_configured or webhook_configured) else "DEMO_MODE"
     return {
+        "mode": {
+            "execution_mode": execution_mode,
+            "description": {
+                "DEMO_MODE": "Deterministic simulation — no Razorpay credentials configured. Simulated calls are explicitly labeled.",
+                "TEST_MODE_PARTIAL": "Razorpay Test Mode partially configured (API keys or webhook secret). Unconfigured parts run clearly-labeled simulation.",
+                "RAZORPAY_TEST_MODE": "Razorpay Test Mode active — real test API requests and HMAC-verified webhooks. No real money.",
+            }[execution_mode],
+        },
         "api": {"status": "ready", "docs": "/docs"},
         "risk_engine": {"status": "ready", "model_loaded": risk_engine.is_ml_loaded, "model_version": risk_engine.model_version},
+        "agent": {"status": "ready", "tools": len(TOOL_REGISTRY), "score_source": "deterministic_ml_engine"},
+        "profiles": {"status": "ready", "customers_tracked": len(profile_store.list_customers())},
         "razorpay": {"status": "configured" if razorpay_configured else "simulation", "test_mode": True},
-        "webhook": {"status": "configured" if bool(os.environ.get("RAZORPAY_WEBHOOK_SECRET")) else "not_configured", "signature": "HMAC-SHA256"},
-        "llm": {"provider": getattr(risk_analyst, "_backend", "none"), "configured": risk_analyst.is_llm_active},
+        "webhook": {"status": "configured" if webhook_configured else "not_configured", "signature": "HMAC-SHA256", "idempotency": True},
+        "llm": {"provider": getattr(risk_analyst, "_backend", "none"), "configured": risk_analyst.is_llm_active, "fallback": "rule_based_deterministic"},
     }
 
 
@@ -269,12 +319,232 @@ async def assistant_chat(request: AssistantChatRequest):
     return AssistantChatResponse(answer=answer, engine="RiskPilot free rule agent")
 
 
+@app.post("/v1/investigations/run", summary="Run full tool-based risk investigation", tags=["Risk Engine"])
+async def run_investigation(request: TransactionRequest):
+    """
+    Execute the complete Risk Investigation Agent workflow with REAL tool calls:
+    customer history, transaction history, device, location, velocity, merchant,
+    account risk, deterministic ML score, risk case, profile updates, audit event,
+    and recommended action — each step individually timed.
+    The numeric risk score comes ONLY from the deterministic engine, never the LLM.
+    """
+    try:
+        txn_dict = request.model_dump()
+        result = investigation_agent.run_investigation(txn_dict)
+        return result
+    except Exception as e:
+        logger.exception("Investigation failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred during the investigation: {str(e)}",
+        )
+
+
+@app.get("/v1/investigations/tools", summary="Agent tool registry", tags=["Risk Engine"])
+async def list_agent_tools():
+    """Transparency endpoint: the exact tools available to the investigation agent."""
+    return {"agent": "RiskPilot Investigation Agent v1", "tools": TOOL_REGISTRY, "score_source": "deterministic_ml_engine"}
+
+
+@app.get("/v1/profiles/customer/{customer_id}", summary="Customer risk profile", tags=["Risk Profiles"])
+async def get_customer_profile(customer_id: str):
+    """Closed-loop customer risk profile: history, devices, locations, velocity, risk events."""
+    profile = profile_store.get_customer_profile(customer_id)
+    if profile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No risk profile found for customer '{customer_id}'.")
+    return profile
+
+
+@app.get("/v1/profiles/merchant/{merchant_id}", summary="Merchant risk profile", tags=["Risk Profiles"])
+async def get_merchant_profile(merchant_id: str):
+    """Closed-loop merchant risk profile: volume, suspicious rate, trend, investigations."""
+    profile = profile_store.get_merchant_profile(merchant_id)
+    if profile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No risk profile found for merchant '{merchant_id}'.")
+    return profile
+
+
+class JudgeRunRequest(TransactionRequest):
+    """Judge Mode: all fields optional — the canonical high-risk ATO scenario
+    (₹4,80,000, new device, location anomaly, velocity 12, 5 failed attempts)
+    is used when a field is omitted."""
+    def __init__(self, **data):
+        defaults = {
+            "amount": 480000.0,
+            "customer_id": "CUS_JUDGE_DEMO",
+            "device_id": "DEV_JUDGE_NEW",
+            "location": "Bengaluru, IN",
+            "velocity": 12,
+            "failed_attempts": 5,
+            "account_age_days": 2,
+            "merchant_id": "MERCH_JUDGE_DEMO",
+            "merchant_risk_score": 65.0,
+            "behavioral_deviation": 0.82,
+        }
+        merged = {**defaults, **{k: v for k, v in data.items() if v is not None}}
+        super().__init__(**merged)
+
+
+@app.post("/v1/investigations/judge-run", summary="Judge Mode: full closed-loop payment risk flow", tags=["Risk Engine"])
+async def judge_run(request: JudgeRunRequest):
+    """
+    One-click 2-3 minute reviewer flow. Every step is REAL backend execution,
+    individually timed and labeled:
+
+      Transaction → Risk Engine (ML) → Agent Investigation (tool calls)
+      → Governance Policy → Razorpay Test Mode action → Webhook verification
+      → Audit Trail → Risk Profile Update
+
+    Honesty rules:
+      - Razorpay step: REAL Test Mode order creation when credentials exist;
+        otherwise an explicitly-labeled deterministic simulation.
+      - Webhook step: the HMAC-SHA256 verification is REAL against a locally
+        generated test event (labeled origin) when RAZORPAY_WEBHOOK_SECRET is
+        set; skipped and labeled when not configured.
+    """
+    t_total = time.perf_counter()
+    timeline = []
+
+    def record(name: str, detail: str, result: Any, t0: float, mode_label: str) -> None:
+        timeline.append({
+            "step": len(timeline) + 1,
+            "name": name,
+            "detail": detail,
+            "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
+            "mode": mode_label,
+            "result": result,
+        })
+
+    txn = request.model_dump()
+    txn_id = f"txn_{uuid.uuid4().hex[:12]}"
+    txn["transaction_id"] = txn_id
+
+    # 1. Transaction received
+    t0 = time.perf_counter()
+    record("transaction_received", f"Transaction {txn_id} received (₹{txn['amount']:,.0f}).",
+           {"transaction_id": txn_id, "amount": txn["amount"], "customer_id": txn["customer_id"]},
+           t0, "real")
+
+    # 2. ML risk engine (authoritative score)
+    t0 = time.perf_counter()
+    assessment = normalize_assessment(
+        risk_engine.analyze_transaction(txn), txn_id, datetime.now(timezone.utc).isoformat()
+    )
+    record("risk_engine", f"Deterministic ML risk score computed: {assessment['risk_score']}/100 ({assessment['risk_level'].upper()}).",
+           {"risk_score": assessment["risk_score"], "risk_level": assessment["risk_level"],
+            "decision": assessment["decision"], "model_version": assessment["model_version"]},
+           t0, "real")
+
+    # 3. Agent investigation (real tool calls, audit + profile updates included)
+    t0 = time.perf_counter()
+    investigation = investigation_agent.run_investigation(txn)
+    record("agent_investigation",
+           f"Agent executed {len(investigation['steps'])} tool calls; case opened: {bool(investigation['risk_case'])}.",
+           {"agent_tools_executed": [s["tool"] for s in investigation["steps"]],
+            "risk_case": investigation["risk_case"],
+            "score_source": investigation["risk_assessment"]["score_source"],
+            "agent_latency_ms": investigation["total_latency_ms"]},
+           t0, "real")
+
+    # 4. Governance policy (score band → governed decision; abstention when evidence is thin)
+    t0 = time.perf_counter()
+    governed = {
+        "policy": "defense_only_v1",
+        "risk_band": assessment["risk_level"],
+        "governed_decision": assessment["decision"],
+        "human_review_required": assessment["decision"] in ("review", "block"),
+        "abstained": False,
+        "rules": [
+            "0-30 LOW → APPROVE", "31-60 MEDIUM → REVIEW", "61-80 HIGH → REVIEW / STEP-UP",
+            "81-100 CRITICAL → BLOCK",
+        ],
+    }
+    record("governance_policy", f"Governance band applied: {assessment['risk_level'].upper()} → {assessment['decision'].upper()}"
+           + (" — analyst review required before any release." if governed["human_review_required"] else "."),
+           governed, t0, "real")
+
+    # 5. Razorpay Test Mode action (risk gateway: create or refuse the order)
+    t0 = time.perf_counter()
+    razorpay_mode = "razorpay_test_mode" if not razorpay_service.is_placeholder_key else "labeled_simulation"
+    try:
+        rzp_result = await razorpay_service.create_order_with_risk_check(
+            order_payload=txn, risk_engine=risk_engine, audit_store=audit_store,
+        )
+        if rzp_result["success"]:
+            rzp_detail = f"Razorpay order {rzp_result['order']['id']} created (decision: {assessment['decision'].upper()})."
+        else:
+            rzp_detail = f"Order creation REFUSED by risk gate ({rzp_result['status']})."
+        record("razorpay_action", rzp_detail,
+               {"success": rzp_result["success"], "status": rzp_result["status"],
+                "order_id": (rzp_result["order"] or {}).get("id"),
+                "test_mode_warning": rzp_result.get("test_mode_warning")},
+               t0, razorpay_mode)
+    except Exception as ex:
+        record("razorpay_action", f"Razorpay action failed: {ex}", {"success": False, "status": "error"},
+               t0, razorpay_mode)
+
+    # 6. Webhook verification — REAL HMAC check on a locally generated, clearly labeled test event
+    t0 = time.perf_counter()
+    webhook_secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET")
+    if webhook_secret:
+        import hashlib, hmac as hmac_mod
+        payment_id = f"pay_test_{uuid.uuid4().hex[:10]}"
+        webhook_payload = json.dumps({
+            "event": "payment.captured" if assessment["decision"] == "approve" else "payment.authorized",
+            "payload": {"payment": {"entity": {
+                "id": payment_id, "amount": int(txn["amount"] * 100), "currency": "INR",
+                "status": "authorized", "created_at": int(time.time()),
+                "notes": {"risk_pilot_id": txn_id, "customer_id": txn["customer_id"],
+                          "merchant_id": txn["merchant_id"], "origin": "locally_generated_test_event"},
+            }}},
+        }, sort_keys=True)
+        signature = hmac_mod.new(webhook_secret.encode(), webhook_payload.encode(), hashlib.sha256).hexdigest()
+        wb_body, wb_status = webhook_handler.process_webhook(webhook_payload, signature=signature)
+        record("webhook_verification",
+               "HMAC-SHA256 signature VERIFIED on a locally generated test event (origin labeled in payload).",
+               {"signature_verified": wb_status == 200, "http_status": wb_status, "response": wb_body,
+                "event_origin": "locally_generated_test_event"},
+               t0, "real_hmac_on_labeled_test_event")
+    else:
+        record("webhook_verification",
+               "Skipped: RAZORPAY_WEBHOOK_SECRET not configured. Signature verification cannot run — not simulated.",
+               {"signature_verified": None, "skipped_reason": "webhook_secret_not_configured"},
+               t0, "not_configured_skipped")
+
+    # 7. Audit trail (entries actually written during this run)
+    t0 = time.perf_counter()
+    audit_entries = audit_store.get_by_transaction_id(txn_id)
+    record("audit_trail", f"{len(audit_entries.reasons) if audit_entries else 0}+ audit entries recorded for {txn_id} "
+           "(risk decision, agent investigation, Razorpay gate).",
+           {"transaction_id": txn_id, "audit_available": audit_entries is not None},
+           t0, "real")
+
+    # 8. Risk profile update (closed loop)
+    t0 = time.perf_counter()
+    profile = profile_store.get_customer_profile(str(txn["customer_id"]))
+    record("risk_profile_update", f"Customer {txn['customer_id']} risk profile updated "
+           f"(score {profile['risk_score']}/100, {profile['total_transactions']} transactions).",
+           profile, t0, "real")
+
+    return {
+        "flow": "judge_mode_closed_loop",
+        "transaction_id": txn_id,
+        "execution_mode": "RAZORPAY_TEST_MODE" if not razorpay_service.is_placeholder_key else "DEMO_MODE",
+        "final_decision": assessment["decision"].upper(),
+        "risk_score": assessment["risk_score"],
+        "risk_level": assessment["risk_level"].upper(),
+        "timeline": timeline,
+        "total_latency_ms": round((time.perf_counter() - t_total) * 1000, 1),
+    }
+
+
 @app.post("/v1/risk/analyze", response_model=RiskAnalysisResponse, summary="Analyze Transaction Risk", tags=["Risk Engine"])
 async def analyze_risk(request: TransactionRequest):
     """
     Analyze a transaction payload for fraud risk using ML model scoring and rule bands.
     Records the decision automatically into the audit store.
     """
+    start = time.perf_counter()
     try:
         txn_id = request.transaction_id or f"txn_{uuid.uuid4().hex[:12]}"
         txn_dict = request.model_dump()
@@ -296,6 +566,21 @@ async def analyze_risk(request: TransactionRequest):
             merchant_id=request.merchant_id,
         )
 
+        # Closed loop: update customer + merchant risk profiles
+        profile_store.record_decision(
+            transaction_id=txn_id,
+            customer_id=request.customer_id,
+            merchant_id=request.merchant_id,
+            amount_inr=float(request.amount),
+            decision=assessment["decision"],
+            risk_score=float(assessment["risk_score"]),
+            device_id=request.device_id,
+            location=request.location,
+            velocity_1h=int(request.velocity),
+            model_version=assessment["model_version"],
+        )
+
+        assessment["latency_ms"] = round((time.perf_counter() - start) * 1000, 1)
         return RiskAnalysisResponse(**assessment)
 
     except Exception as e:

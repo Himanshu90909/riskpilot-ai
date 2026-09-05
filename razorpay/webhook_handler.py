@@ -27,6 +27,7 @@ class RazorpayWebhookHandler:
         webhook_secret: Optional[str] = None,
         risk_engine: Optional[RiskEngine] = None,
         audit_store: Optional[AuditStore] = None,
+        profile_store: Optional[Any] = None,
     ) -> None:
         """
         Initialize Razorpay webhook handler.
@@ -34,10 +35,15 @@ class RazorpayWebhookHandler:
         :param webhook_secret: Secret string configured in Razorpay Webhook Dashboard
         :param risk_engine: Custom RiskEngine instance
         :param audit_store: Custom AuditStore instance
+        :param profile_store: Optional RiskProfileStore for closed-loop risk profile updates
         """
         self.webhook_secret = webhook_secret
         self.risk_engine = risk_engine or RiskEngine()
         self.audit_store = audit_store or default_audit_store
+        self.profile_store = profile_store
+        # Idempotency: fingerprints of already-processed events (duplicate webhook protection)
+        self._processed_fingerprints = set()
+        self._max_fingerprints = 5000
 
     def verify_signature(
         self,
@@ -108,7 +114,38 @@ class RazorpayWebhookHandler:
             data = payload
 
         event = data.get("event", "")
+
+        # 2. Duplicate webhook protection (idempotency)
+        # Fingerprint on (event, entity id, entity created_at, amount): the same
+        # webhook redelivered by Razorpay produces the same fingerprint and is
+        # safely ignored instead of processed twice.
         event_payload = data.get("payload", {})
+        entity = (
+            event_payload.get("payment", {}).get("entity")
+            or event_payload.get("order", {}).get("entity")
+            or event_payload.get("refund", {}).get("entity")
+            or {}
+        )
+        fingerprint_src = json.dumps(
+            {
+                "event": event,
+                "entity_id": entity.get("id"),
+                "entity_created_at": entity.get("created_at"),
+                "amount": entity.get("amount"),
+                "acct": data.get("account_id"),
+            },
+            sort_keys=True,
+        )
+        fingerprint = hashlib.sha256(fingerprint_src.encode("utf-8")).hexdigest()
+        if fingerprint in self._processed_fingerprints:
+            return {
+                "status": "duplicate_ignored",
+                "event": event,
+                "message": "Duplicate webhook delivery detected (idempotent replay protection). No reprocessing performed.",
+            }, 200
+        if len(self._processed_fingerprints) >= self._max_fingerprints:
+            self._processed_fingerprints.clear()  # bounded memory
+        self._processed_fingerprints.add(fingerprint)
 
         # Handle supported event types
         if event == "payment.failed":
@@ -124,6 +161,27 @@ class RazorpayWebhookHandler:
                 "message": f"Event '{event}' received but no special risk handling required.",
             }
             return res, 200
+
+    def _update_profiles_from_webhook(self, event_type: str, entity: Dict[str, Any]) -> None:
+        """Closed-loop: feed verified webhook events into customer/merchant risk profiles.
+        Uses notes.risk_pilot_id / customer identifiers when present; profile store
+        ignores unknown customers safely."""
+        if self.profile_store is None:
+            return
+        notes = entity.get("notes", {}) or {}
+        if not isinstance(notes, dict):
+            return
+        try:
+            self.profile_store.record_webhook_event(
+                event_type=event_type,
+                entity_id=str(entity.get("id", "unknown")),
+                customer_id=notes.get("customer_id"),
+                merchant_id=notes.get("merchant_id"),
+                outcome="processed",
+            )
+        except Exception:
+            # Profile update must never break webhook processing
+            pass
 
     def _handle_payment_failed(
         self,
@@ -147,6 +205,7 @@ class RazorpayWebhookHandler:
             "message": f"Failed payment evaluated. Recommended action: {recommended_action}.",
         }
 
+        self._update_profiles_from_webhook("payment.failed", payment_entity)
         self.audit_store.log_decision(
             event_type="webhook_payment_failed",
             transaction_data={"payment_id": payment_id, "event": "payment.failed"},
@@ -179,6 +238,7 @@ class RazorpayWebhookHandler:
             "message": f"Payment {payment_id} authorized and confirmed under risk status '{risk_flag}'.",
         }
 
+        self._update_profiles_from_webhook("payment.authorized", payment_entity)
         self.audit_store.log_decision(
             event_type="webhook_payment_authorized",
             transaction_data={"payment_id": payment_id, "event": "payment.authorized"},
@@ -205,6 +265,7 @@ class RazorpayWebhookHandler:
             "message": f"Order {order_id} marked paid.",
         }
 
+        self._update_profiles_from_webhook("order.paid", order_entity)
         self.audit_store.log_decision(
             event_type="webhook_order_paid",
             transaction_data={"order_id": order_id, "event": "order.paid"},
