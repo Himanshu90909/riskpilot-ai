@@ -7,7 +7,7 @@
 
 ## 📌 Executive Summary
 
-**RiskPilot AI** is an enterprise-grade, defense-only AI Risk Management platform purpose-built for Razorpay merchants and payment infrastructure. It combines fast tabular machine learning (XGBoost) with LLM contextual analysis (Llama 3 / GPT-4o) to evaluate payment risk in real-time.
+**RiskPilot AI** is an enterprise-grade, defense-only AI Risk Management platform purpose-built for Razorpay merchants and payment infrastructure. It combines fast tabular machine learning (scikit-learn Gradient Boosting, `ml_model_v1.0`) with LLM contextual analysis (Google Gemini / Groq, with a deterministic rule-based fallback) to evaluate payment risk in real-time.
 
 Crucially, RiskPilot AI is built around **Transparency and Human-in-the-Loop (HITL) Resilience**. When automated risk models trigger false positives on high-value, high-trust accounts, RiskPilot AI enables seamless analyst investigation, human override, and cryptographically signed compliance audit trails.
 
@@ -31,7 +31,7 @@ Crucially, RiskPilot AI is built around **Transparency and Human-in-the-Loop (HI
                   |                                                       |
                   v                                                       v
       +-----------------------+                               +-----------------------+
-      |  XGBoost Risk Engine  |                               |   LLM Risk Analyst    |
+      |  GB Risk Engine (ml/) |                               |   LLM Risk Analyst    |
       |        (ml/)          |                               |        (llm/)         |
       | - Device Telemetry    |                               | - Narrative Reasoning |
       | - Geo Jump Velocity   |                               | - ATO Anomaly Check   |
@@ -83,7 +83,7 @@ Crucially, RiskPilot AI is built around **Transparency and Human-in-the-Loop (HI
 │   └── routes/                # Risk evaluation & audit trail APIs
 │
 ├── ml/                        # ML Training & Inference Engine
-│   ├── model.py               # XGBoost model training & prediction
+│   ├── train_model.py         # Gradient Boosting model training & prediction
 │   ├── features.py            # Real-time feature extraction pipeline
 │   ├── train.py               # Training pipeline script
 │   └── results.json           # Evaluation metrics & false positive costs

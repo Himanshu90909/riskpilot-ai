@@ -132,7 +132,14 @@ def extract_context_fields(context: Dict[str, Any]) -> Dict[str, Any]:
 
     risk_score = float(context.get("risk_score", 0.0))
     risk_level = str(context.get("risk_level", "LOW")).upper()
-    ai_decision = str(context.get("ai_decision", "APPROVE")).upper()
+    raw_decision = context.get("ai_decision") or context.get("decision") or "APPROVE"
+    decision_map = {
+        "approve": "APPROVE", "allow": "APPROVE", "cleared": "APPROVE",
+        "review": "REVIEW", "flag_for_review": "REVIEW", "flag": "REVIEW",
+        "step_up": "REVIEW", "stepup": "REVIEW", "verify": "REVIEW",
+        "block": "BLOCK", "blocked": "BLOCK", "reject": "BLOCK", "refuse": "BLOCK", "denied": "BLOCK",
+    }
+    ai_decision = decision_map.get(str(raw_decision).strip().lower(), "APPROVE")
     transaction_id = str(context.get("transaction_id", "tx_unknown"))
 
     return {

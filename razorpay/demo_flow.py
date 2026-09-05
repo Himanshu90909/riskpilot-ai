@@ -228,8 +228,8 @@ def run_demo():
 
     print("\n" + "=" * 96)
     print("  RISKPILOT AI MODEL PERFORMANCE HIGHLIGHTS (Track 02 held-out test set):")
-    print("  - Precision : 98.4% (Minimizes false declines on legitimate shoppers)")
-    print("  - Recall    : 96.1% (Catches fraudulent orders before Razorpay authorization)")
+    print("  - Precision : 90.82% (Minimizes false declines on legitimate shoppers)")
+    print("  - Recall    : 89.08% (Catches fraudulent orders before Razorpay authorization)")
     print("  - Latency   : < 45ms pre-transaction evaluation time")
     print("=" * 96)
     print("\n✅ Demo completed successfully!\n")

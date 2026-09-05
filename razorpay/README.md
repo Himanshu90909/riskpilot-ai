@@ -109,12 +109,16 @@ Webhook consumer with HMAC-SHA256 signature verification:
 
 ---
 
-## Track 02 Performance Context
+## Performance Context (Reproducible)
 
-| Metric | Measured Value (Held-Out Test Set) |
-|---|---|
-| **Precision** | **98.4%** |
-| **Recall** | **96.1%** |
-| **Evaluation Latency** | **< 45 ms** |
+This risk gateway uses the same ML model that powers the Live Test Mode API (`ml_model_v1.0`), a Gradient Boosting classifier evaluated on a 20,000-record held-out synthetic test set. Full methodology, the companion Track 02 weighted-signal detector evaluation (precision 93.35% / recall 88.97% / F1 91.11%), and the public-dataset benchmark live in the [root README evaluation table](../README.md#evaluation--one-table-one-methodology-per-metric).
 
-RiskPilot AI balances fraud mitigation with friction-free checkout for legitimate customers.
+| Metric | Value | Source |
+|---|---|---|
+| **Precision** | **90.82%** | `ml/results.json` (Gradient Boosting, held-out) |
+| **Recall** | **89.08%** | `ml/results.json` (Gradient Boosting, held-out) |
+| **F1 Score** | **89.94%** | `ml/results.json` (Gradient Boosting, held-out) |
+| **False Positive Rate** | **0.52%** | `ml/results.json` |
+| **Decision Latency** | **< 45 ms** | Local FastAPI smoke test (single transaction) |
+
+Reproduce the model evaluation with `python ml/run_evaluation.py`. Synthetic-data metrics are labeled as such and are not production fraud estimates.

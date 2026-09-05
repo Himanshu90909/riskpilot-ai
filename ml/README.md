@@ -65,3 +65,16 @@ This model is strictly defense-only. It detects fraud; it does not facilitate it
 ## Disclaimer
 
 All data is synthetic. Metrics are not production fraud estimates. The model is trained on deterministic synthetic data for hackathon demonstration purposes.
+
+## Public-Dataset Benchmark (Real Data)
+
+`benchmark_public.py` validates the detection approach against the **Kaggle Credit Card Fraud Detection** dataset — 284,807 real card transactions with a 0.172% fraud rate. Unlike the synthetic data above, this measures real-world class imbalance.
+
+```bash
+# 1. Download creditcard.csv from https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud
+# 2. Place it at ml/data/creditcard.csv
+python ml/benchmark_public.py
+# → writes ml/public_benchmark.json
+```
+
+Real-data metrics are reported honestly alongside synthetic ones: the synthetic set powers reproducible demo scenarios; the public set provides external validity.
