@@ -188,6 +188,17 @@ class InvestigationRequest(BaseModel):
     context: Dict[str, Any] = Field(default_factory=dict)
 
 
+class AssistantChatRequest(BaseModel):
+    """Question for the free, defense-only RiskPilot operator agent."""
+    question: str = Field(..., min_length=1, max_length=500)
+
+
+class AssistantChatResponse(BaseModel):
+    answer: str
+    engine: str
+    safe_scope: str = "defense-only"
+
+
 # --- Endpoints ---
 
 @app.get("/v1/health", summary="Health Check Endpoint", tags=["System"])
@@ -235,6 +246,27 @@ async def explain_investigation(request: InvestigationRequest):
     context.update(assessment)
     analysis = risk_analyst.analyze_transaction(context)
     return {"transaction_id": transaction_id, "risk": RiskAnalysisResponse(**assessment).model_dump(), "analysis": analysis}
+
+
+@app.post("/v1/assistant/chat", response_model=AssistantChatResponse, summary="Ask RiskPilot operator agent", tags=["Risk Analyst"])
+async def assistant_chat(request: AssistantChatRequest):
+    """Answer common risk-ops questions without requiring a paid model key."""
+    question = request.question.strip().lower()
+    if any(term in question for term in ("bypass", "evade", "spoof", "hack", "steal", "fraud kaise")):
+        answer = "I can’t provide instructions to bypass controls or commit fraud. I can help with defensive detection, safe policy tuning, analyst review, or explaining a flagged transaction."
+    elif any(term in question for term in ("block", "84921", "why")):
+        answer = "TXN-84921 was blocked because the ₹84,999 amount is far above the customer baseline and arrived from a first-seen device and location with elevated velocity. The combined signals produced a critical 91/100 risk score; an analyst can still override the decision."
+    elif any(term in question for term in ("merchant", "shop")):
+        answer = "Nova Electronics is the highest-volume merchant under watch with a 12.4% simulated risk rate. Aster Travel Co. has the steepest increase in flagged activity; review card-testing thresholds before changing policy."
+    elif any(term in question for term in ("takeover", "account")):
+        answer = "The strongest account-takeover cluster combines a new device, new location, password reset, and an unusually large purchase. RiskPilot surfaced 37 related synthetic events across Mumbai and Bengaluru."
+    elif any(term in question for term in ("fraud", "prevented", "impact", "today")):
+        answer = "The NovaPay demo shows ₹3.82 Cr in potential fraud prevented, 12,481 transactions blocked, and a 1.8% false-positive rate. These are synthetic buildathon figures, not production financial results."
+    elif any(term in question for term in ("risk", "riskiest", "high")):
+        answer = "The riskiest synthetic transactions are TXN-84921 at 91, TXN-85288 at 96, and TXN-85473 at 93. They share a new-device signal; two also show elevated velocity."
+    else:
+        answer = "I’m the free RiskPilot operator agent. Ask me to explain a decision, find risky patterns, summarize fraud impact, or suggest a safe analyst-review workflow."
+    return AssistantChatResponse(answer=answer, engine="RiskPilot free rule agent")
 
 
 @app.post("/v1/risk/analyze", response_model=RiskAnalysisResponse, summary="Analyze Transaction Risk", tags=["Risk Engine"])
