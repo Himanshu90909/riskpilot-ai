@@ -69,7 +69,10 @@ class RazorpayIntegration:
             "behavioral_deviation": behavioral_deviation,
         }
 
-        risk_assessment = risk_engine.analyze_transaction(txn_risk_input)
+        raw_assessment = risk_engine.analyze_transaction(txn_risk_input)
+        # Governance policy decides the final action (AI recommends; governance decides)
+        from server.governance import governed_assessment as _governed
+        risk_assessment = _governed(raw_assessment)
         risk_assessment["transaction_id"] = txn_id
 
         # 2. Record in Audit Store
@@ -105,7 +108,9 @@ class RazorpayIntegration:
                 "test_mode_warning": test_warning,
             }
 
-        # 4. Handle 'approve' or 'review' Decision -> Create Razorpay Order
+        # 4. Handle 'approve', 'review', or 'step_up' Decision -> Create Razorpay Order
+        #    (step_up creates the order but marks it as requiring additional verification,
+        #     e.g. 3DS/OTP, before the payment can complete.)
         amount_paise = int(round(amount_inr * 100))
         user_notes = order_payload.get("notes") or {}
         
@@ -116,7 +121,11 @@ class RazorpayIntegration:
             "risk_score": str(risk_score),
             "risk_level": risk_level,
             "risk_decision": decision,
+            "ai_recommendation": str(risk_assessment.get("ai_recommendation", "review")),
+            "policy_version": str(risk_assessment.get("policy_version", "gov_policy_v1.0")),
         }
+        if decision == "step_up":
+            rzp_notes["requires_step_up_verification"] = "true"
 
         rzp_payload = {
             "amount": amount_paise,

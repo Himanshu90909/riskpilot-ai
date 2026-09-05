@@ -22,6 +22,7 @@ from server.audit_store import AuditStore, AuditEntry
 from server.razorpay_integration import RazorpayIntegration
 from server.risk_profiles import RiskProfileStore, default_profile_store
 from server.agent_tools import RiskInvestigationAgent, TOOL_REGISTRY
+from server.governance import apply_governance, governed_assessment
 from server.v2_governance import AppendOnlyAudit, EvidenceV2, PolicyV2, RiskContextV2, ReviewRequestV2, DecisionV2, score_v2, summarize_v2
 from razorpay.webhook_handler import RazorpayWebhookHandler
 from llm.risk_analyst import RiskAnalyst
@@ -132,7 +133,13 @@ class RiskAnalysisResponse(BaseModel):
     transaction_id: str
     risk_score: float = Field(..., description="Calculated risk score from 0.0 (safest) to 100.0 (highest risk)")
     risk_level: Literal["low", "medium", "high", "critical"] = Field(..., description="Categorical risk band")
-    decision: Literal["approve", "review", "block"] = Field(..., description="Automated decision")
+    decision: Literal["approve", "review", "step_up", "block"] = Field(..., description="Governed final decision (AI recommends; governance decides)")
+    ai_recommendation: str = Field("review", description="The risk engine's recommendation BEFORE governance was applied")
+    recommended_action: str = Field("hold_for_analyst_review", description="Merchant-facing recommended action")
+    risk_factors: List[str] = Field(default_factory=list, description="Contributing risk factors behind the score")
+    evidence: List[Dict[str, Any]] = Field(default_factory=list, description="Structured transaction evidence used in the decision")
+    governance: Dict[str, Any] = Field(default_factory=dict, description="Governance policy result: band, final decision, policy version, rules")
+    policy_version: str = Field("unknown", description="Governance policy version applied to this decision")
     reasons: List[str] = Field(..., description="Contributing risk factors and explanation reasons")
     confidence: Optional[float] = Field(None, description="Calibrated model confidence when available (0.0 - 1.0)")
     model_version: str = Field(..., description="Model or engine version used for scoring")
@@ -145,7 +152,7 @@ class OverrideRequest(BaseModel):
     Request model for human analyst override.
     """
     transaction_id: str = Field(..., description="Target transaction ID to override")
-    human_decision: Literal["approve", "review", "block"] = Field(..., description="Analyst override decision")
+    human_decision: Literal["approve", "review", "step_up", "block"] = Field(..., description="Analyst override decision")
     reason: str = Field(..., description="Explanation for human analyst override", min_length=3)
     analyst_id: Optional[str] = Field("analyst_001", description="Identifier of human analyst")
 
@@ -206,7 +213,7 @@ def normalize_assessment(assessment: Dict[str, Any], transaction_id: str, timest
     if risk_level not in {"low", "medium", "high", "critical"}:
         risk_level = "medium"
     decision = str(assessment.get("decision", assessment.get("recommended_action", "review"))).lower()
-    if decision not in {"approve", "review", "block"}:
+    if decision not in {"approve", "review", "step_up", "block"}:
         decision = "review"
     return {
         **assessment,
@@ -446,21 +453,15 @@ async def judge_run(request: JudgeRunRequest):
             "agent_latency_ms": investigation["total_latency_ms"]},
            t0, "real")
 
-    # 4. Governance policy (score band → governed decision; abstention when evidence is thin)
+    # 4. Governance policy — canonical module (AI recommends; governance decides)
     t0 = time.perf_counter()
-    governed = {
-        "policy": "defense_only_v1",
-        "risk_band": assessment["risk_level"],
-        "governed_decision": assessment["decision"],
-        "human_review_required": assessment["decision"] in ("review", "block"),
-        "abstained": False,
-        "rules": [
-            "0-30 LOW → APPROVE", "31-60 MEDIUM → REVIEW", "61-80 HIGH → REVIEW / STEP-UP",
-            "81-100 CRITICAL → BLOCK",
-        ],
-    }
-    record("governance_policy", f"Governance band applied: {assessment['risk_level'].upper()} → {assessment['decision'].upper()}"
-           + (" — analyst review required before any release." if governed["human_review_required"] else "."),
+    governed = apply_governance(assessment)
+    assessment["ai_recommendation"] = governed["ai_recommendation"]
+    assessment["decision"] = governed["final_decision"]
+    assessment["recommended_action"] = governed["final_decision"]
+    assessment["policy_version"] = governed["policy_version"]
+    record("governance_policy", f"Governance band applied: {assessment['risk_level'].upper()} → {governed['final_decision'].upper()}"
+           + (f" (engine recommended '{governed['ai_recommendation']}' — band policy governs)." if governed["ai_recommendation_differs"] else "."),
            governed, t0, "real")
 
     # 5. Razorpay Test Mode action (risk gateway: create or refuse the order)
@@ -550,12 +551,21 @@ async def analyze_risk(request: TransactionRequest):
         txn_dict = request.model_dump()
         txn_dict["transaction_id"] = txn_id
 
-        # Analyze transaction
-        assessment = normalize_assessment(
-            risk_engine.analyze_transaction(txn_dict),
-            txn_id,
-            datetime.now(timezone.utc).isoformat(),
-        )
+        # Risk Engine scores (deterministic ML)...
+        raw_assessment = risk_engine.analyze_transaction(txn_dict)
+
+        # ...Governance Policy decides the final action (AI recommends; governance decides)
+        assessment = governed_assessment(raw_assessment)
+        assessment["risk_factors"] = list(assessment.get("reasons", []))
+        assessment["evidence"] = [
+            {"signal": "amount", "value": float(request.amount), "detail": "Transaction amount (INR)"},
+            {"signal": "velocity", "value": int(request.velocity), "detail": "Transactions in the past hour"},
+            {"signal": "failed_attempts", "value": int(request.failed_attempts), "detail": "Failed payment attempts (24h)"},
+            {"signal": "account_age_days", "value": int(request.account_age_days), "detail": "Customer account age in days"},
+            {"signal": "merchant_risk_score", "value": float(request.merchant_risk_score), "detail": "Merchant risk rating (0-100)"},
+            {"signal": "behavioral_deviation", "value": float(request.behavioral_deviation), "detail": "Behavioral deviation score (0-1)"},
+        ]
+        assessment = normalize_assessment(assessment, txn_id, datetime.now(timezone.utc).isoformat())
 
         # Log to audit store
         audit_store.record_decision(
@@ -596,7 +606,7 @@ async def override_risk(request: OverrideRequest):
     Record a human analyst override for an AI risk decision.
     Updates the audit trail with analyst justification and timestamp.
     """
-    if request.human_decision not in ("approve", "review", "block"):
+    if request.human_decision not in ("approve", "review", "step_up", "block"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="human_decision must be one of: 'approve', 'review', 'block'."

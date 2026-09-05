@@ -21,6 +21,7 @@ class AuditEntry(BaseModel):
     risk_score: float
     risk_level: str
     model_version: str
+    policy_version: Optional[str] = None
     reasons: List[str] = Field(default_factory=list)
     confidence: Optional[float] = None
     is_overridden: bool = False
@@ -125,6 +126,7 @@ class AuditStore:
             risk_score=float(risk_assessment.get("score", risk_assessment.get("risk_score", 0.0))),
             risk_level=risk_assessment.get("risk_level", "medium"),
             model_version=risk_assessment.get("model_version", "unknown"),
+            policy_version=risk_assessment.get("policy_version"),
             reasons=risk_assessment.get("reasons", []),
             confidence=risk_assessment.get("confidence"),
             is_overridden=False,

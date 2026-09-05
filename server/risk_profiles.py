@@ -180,6 +180,10 @@ class RiskProfileStore:
                 cust.risk_score = max(0.0, cust.risk_score * 0.95)
             elif decision == "review":
                 cust.reviewed_transactions += 1
+            elif decision == "step_up":
+                # Governance step-up: payment held pending additional verification
+                cust.reviewed_transactions += 1
+                cust.risk_score = min(100.0, cust.risk_score + 8.0)
             elif decision == "block":
                 cust.blocked_transactions += 1
                 # blocks raise risk sharply
@@ -197,7 +201,7 @@ class RiskProfileStore:
                 if decision == "block":
                     merch.blocked_transactions += 1
                     merch.risk_score = min(100.0, merch.risk_score + 5.0)
-                elif decision == "review":
+                elif decision in ("review", "step_up"):
                     merch.reviewed_transactions += 1
                 flagged = merch.blocked_transactions + merch.reviewed_transactions
                 merch.suspicious_percentage = (

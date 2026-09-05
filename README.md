@@ -257,10 +257,14 @@ TOTAL                     91    → BLOCK
 |---:|---|---|
 | 0–30 | LOW | APPROVE |
 | 31–60 | MEDIUM | REVIEW |
-| 61–80 | HIGH | REVIEW / STEP-UP |
+| 61–80 | HIGH | STEP-UP (governed — additional verification required) |
 | 81–100 | CRITICAL | BLOCK |
 
 The score is deterministic so the same walkthrough always produces the same evidence. In Live Test Mode the identical logic runs server-side behind `POST /v1/risk/analyze`, backed by `ml_model_v1.0`.
+
+## Governance policy (AI recommends; governance decides)
+
+The risk engine and the AI investigation layer only **recommend**. A separate governance policy (`server/governance.py`, `gov_policy_v1.0`) owns the final automated decision per band: LOW → APPROVE, MEDIUM → REVIEW, HIGH → STEP-UP, CRITICAL → BLOCK. The HIGH band deliberately raises the engine's typical `review` recommendation to `step_up`, and both values are returned independently (`ai_recommendation` vs `decision`) and recorded in the audit trail with the policy version. Human analysts can override any governed decision via `POST /v1/risk/override` — the original AI decision, score, model version, and policy version are preserved.
 
 ## AI agent architecture
 
@@ -346,12 +350,12 @@ pnpm run dev
 Open http://localhost:3000/live. The page calls:
 
 - `GET /v1/health` and `GET /v1/integrations/status` (reports the honest execution mode: `DEMO_MODE` / `TEST_MODE_PARTIAL` / `RAZORPAY_TEST_MODE`)
-- `POST /v1/risk/analyze` — authoritative risk decision (ML model + rule fallback, measured latency, closed-loop profile update)
+- `POST /v1/risk/analyze` — authoritative risk decision (ML model + rule fallback, measured latency, closed-loop profile update). Response includes `transaction_id`, `risk_score`, `risk_level`, `decision` (governed: approve/review/step_up/block), `ai_recommendation`, `risk_factors`, `evidence`, `recommended_action`, `governance`, `policy_version`, `model_version`, `timestamp`, `latency_ms`
 - `POST /v1/investigations/run` — real agent tool calls (customer history, device, location, velocity, merchant, account risk, deterministic ML score, risk case, audit event) with per-step measured latency
 - `POST /v1/investigations/judge-run` — one-click closed loop: transaction → risk engine → agent → governance → Razorpay Test Mode action → webhook verification → audit → profile update, each step labeled `real` / `razorpay_test_mode` / `labeled_simulation` / `not_configured_skipped`
 - `GET /v1/investigations/tools` — the agent tool registry (transparency)
 - `GET /v1/profiles/customer/{id}` and `GET /v1/profiles/merchant/{id}` — closed-loop risk profiles
-- `POST /v1/razorpay/create-payment` — risk-gated Razorpay Test Mode order creation (refuses on BLOCK; real test API with credentials, clearly-labeled simulation without)
+- `POST /v1/razorpay/create-payment` — risk-gated Razorpay Test Mode order creation (refuses on BLOCK; STEP-UP creates the order with `requires_step_up_verification` note; REVIEW embeds risk notes; real test API with credentials, clearly-labeled simulation without)
 - `POST /v1/razorpay/webhook` — HMAC-SHA256 signature verification (constant-time compare) + idempotent duplicate protection
 - `GET /v1/audit/recent`
 

@@ -232,21 +232,6 @@ export const riskCategories = [
   ["Device anomaly", 12, "#A67C52"], ["Geographic anomaly", 8, "#8E9BAA"], ["Behavioral anomaly", 7, "#6B7787"],
 ] as const;
 
-export function calculateRiskScore(input: { amount: number; newDevice: boolean; newLocation: boolean; velocity: number; failedAttempts: number; accountAge: number; merchantRisk: number; behaviorDeviation: number }) {
-  const factors = [
-    { label: "Transaction amount", value: input.amount >= 50000 ? 22 : input.amount >= 25000 ? 12 : 4 },
-    { label: "New device", value: input.newDevice ? 18 : 2 },
-    { label: "Location anomaly", value: input.newLocation ? 16 : 2 },
-    { label: "Transaction velocity", value: input.velocity >= 10 ? 25 : input.velocity >= 5 ? 12 : 3 },
-    { label: "Failed payment attempts", value: input.failedAttempts >= 3 ? 15 : input.failedAttempts * 3 },
-    { label: "Account age", value: input.accountAge < 0.5 ? 9 : input.accountAge < 1 ? 4 : 1 },
-    { label: "Merchant risk", value: Math.round(input.merchantRisk * 1.4) },
-    { label: "Behavioral deviation", value: Math.round(input.behaviorDeviation * 0.18) },
-  ];
-  const score = Math.min(100, factors.reduce((sum, factor) => sum + factor.value, 0));
-  const level = levelFor(score);
-  return { score, level, decision: decisionFor(level), factors };
-}
 
 export function assistantReply(question: string): string {
   const normalized = question.toLowerCase();
