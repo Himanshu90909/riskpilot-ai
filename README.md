@@ -213,16 +213,34 @@ Real response (from the running FastAPI service):
 
 ```json
 {
-  "transaction_id": "txn_53515ca5ce18",
+  "transaction_id": "txn_8ab69818c512",
   "risk_score": 99.5,
   "risk_level": "critical",
   "decision": "block",
-  "reasons": [
+  "ai_recommendation": "block",
+  "risk_factors": [
     "High-value transaction amount (₹480,000.00)",
     "Severe velocity spike (12 attempts in past hour)",
     "Multiple recent payment failures (5 in 24h)"
   ],
-  "model_version": "ml_model_v1.0"
+  "evidence": [
+    { "signal": "amount", "value": 480000.0, "detail": "Transaction amount (INR)" },
+    { "signal": "velocity", "value": 12, "detail": "Transactions in the past hour" },
+    { "signal": "failed_attempts", "value": 5, "detail": "Failed payment attempts (24h)" },
+    { "signal": "account_age_days", "value": 2, "detail": "Customer account age in days" }
+  ],
+  "governance": {
+    "policy_version": "gov_policy_v1.0",
+    "risk_band": "critical",
+    "ai_recommendation": "block",
+    "final_decision": "block",
+    "step_up_required": false,
+    "human_review_required": true
+  },
+  "policy_version": "gov_policy_v1.0",
+  "model_version": "ml_model_v1.0",
+  "timestamp": "2026-09-05T14:18:00.658956+00:00",
+  "latency_ms": 3.2
 }
 ```
 
@@ -377,6 +395,7 @@ Open http://localhost:3000/live. The page calls:
 - `GET /v1/health` and `GET /v1/integrations/status` (reports the honest execution mode: `DEMO_MODE` / `TEST_MODE_PARTIAL` / `RAZORPAY_TEST_MODE`)
 - `POST /v1/risk/analyze` — authoritative risk decision (ML model + rule fallback, measured latency, closed-loop profile update). Response includes `transaction_id`, `risk_score`, `risk_level`, `decision` (governed: approve/review/step_up/block), `ai_recommendation`, `risk_factors`, `evidence`, `recommended_action`, `governance`, `policy_version`, `model_version`, `timestamp`, `latency_ms`
 - `POST /v1/investigations/run` — real agent tool calls (customer history, device, location, velocity, merchant, account risk, deterministic ML score, risk case, audit event) with per-step measured latency
+- `POST /v1/investigations/explain` — structured investigation narrative. The nested `risk` object is the same governed contract as `/v1/risk/analyze`. The `analysis` object carries an honesty label: `is_fallback: true` + `engine_used: "rule_based_fallback"` when no LLM key is configured, or the live provider (`groq`/`gemini`) when one is — the response never claims an LLM investigation that did not happen
 - `POST /v1/investigations/judge-run` — one-click closed loop: transaction → risk engine → agent → governance → Razorpay Test Mode action → webhook verification → audit → profile update, each step labeled `real` / `razorpay_test_mode` / `labeled_simulation` / `not_configured_skipped`
 - `GET /v1/investigations/tools` — the agent tool registry (transparency)
 - `GET /v1/profiles/customer/{id}` and `GET /v1/profiles/merchant/{id}` — closed-loop risk profiles

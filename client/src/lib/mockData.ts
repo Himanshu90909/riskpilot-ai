@@ -254,21 +254,41 @@ export function assistantReply(question: string): string {
 }
 
 export const apiRequest = `{
-  "amount": 84999,
-  "currency": "INR",
+  "amount": 480000,
   "customer_id": "CUS_1029",
-  "device_id": "DEV_8821",
+  "device_id": "DEV_8821_NEW",
   "location": "Mumbai",
-  "payment_method": "card"
+  "velocity": 12,
+  "failed_attempts": 5,
+  "account_age_days": 2,
+  "merchant_id": "MERCH_NOVA",
+  "merchant_risk_score": 65,
+  "behavioral_deviation": 0.82
 }`;
 
 export const apiResponse = `{
-  "risk_score": 91,
+  "transaction_id": "txn_8ab69818c512",
+  "risk_score": 99.5,
   "risk_level": "critical",
   "decision": "block",
-  "reasons": [
-    "new_device",
-    "location_anomaly",
-    "high_velocity"
-  ]
+  "ai_recommendation": "block",
+  "risk_factors": [
+    "High-value transaction amount (₹480,000.00)",
+    "Severe velocity spike (12 attempts in past hour)",
+    "Multiple recent payment failures (5 in 24h)"
+  ],
+  "evidence": [
+    { "signal": "amount", "value": 480000.0, "detail": "Transaction amount (INR)" },
+    { "signal": "velocity", "value": 12, "detail": "Transactions in the past hour" },
+    { "signal": "failed_attempts", "value": 5, "detail": "Failed payment attempts (24h)" }
+  ],
+  "governance": {
+    "policy_version": "gov_policy_v1.0",
+    "ai_recommendation": "block",
+    "final_decision": "block"
+  },
+  "policy_version": "gov_policy_v1.0",
+  "model_version": "ml_model_v1.0",
+  "timestamp": "2026-09-05T14:18:00.658956+00:00",
+  "latency_ms": 3.2
 }`;

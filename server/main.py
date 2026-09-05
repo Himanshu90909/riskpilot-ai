@@ -141,7 +141,6 @@ class RiskAnalysisResponse(BaseModel):
     governance: Dict[str, Any] = Field(default_factory=dict, description="Governance policy result: band, final decision, policy version, rules")
     policy_version: str = Field("unknown", description="Governance policy version applied to this decision")
     reasons: List[str] = Field(..., description="Contributing risk factors and explanation reasons")
-    confidence: Optional[float] = Field(None, description="Calibrated model confidence when available (0.0 - 1.0)")
     model_version: str = Field(..., description="Model or engine version used for scoring")
     timestamp: str = Field(..., description="ISO datetime UTC timestamp of evaluation")
     latency_ms: Optional[float] = Field(None, description="Measured engine latency in milliseconds")
@@ -223,7 +222,6 @@ def normalize_assessment(assessment: Dict[str, Any], transaction_id: str, timest
         "risk_level": risk_level,
         "decision": decision,
         "reasons": list(assessment.get("reasons", [])),
-        "confidence": assessment.get("confidence"),
         "timestamp": timestamp or assessment.get("timestamp") or datetime.now(timezone.utc).isoformat(),
     }
 
@@ -299,7 +297,16 @@ async def explain_investigation(request: InvestigationRequest):
     context = dict(request.context)
     transaction_id = str(context.get("transaction_id") or f"txn_{uuid.uuid4().hex[:12]}")
     context["transaction_id"] = transaction_id
-    assessment = normalize_assessment(risk_engine.analyze_transaction(context), transaction_id)
+    assessment = governed_assessment(normalize_assessment(risk_engine.analyze_transaction(context), transaction_id))
+    assessment["risk_factors"] = list(assessment.get("reasons", []))
+    assessment["evidence"] = [
+        {"signal": "amount", "value": float(context.get("amount", 0.0)), "detail": "Transaction amount (INR)"},
+        {"signal": "velocity", "value": int(context.get("velocity", 0)), "detail": "Transactions in the past hour"},
+        {"signal": "failed_attempts", "value": int(context.get("failed_attempts", 0)), "detail": "Failed payment attempts (24h)"},
+        {"signal": "account_age_days", "value": int(context.get("account_age_days", 30)), "detail": "Customer account age in days"},
+        {"signal": "merchant_risk_score", "value": float(context.get("merchant_risk_score", 0.0)), "detail": "Merchant risk rating (0-100)"},
+        {"signal": "behavioral_deviation", "value": float(context.get("behavioral_deviation", 0.0)), "detail": "Behavioral deviation score (0-1)"},
+    ]
     context.update(assessment)
     analysis = risk_analyst.analyze_transaction(context)
     return {"transaction_id": transaction_id, "risk": RiskAnalysisResponse(**assessment).model_dump(), "analysis": analysis}
