@@ -4,10 +4,17 @@
 > Live demo: [riskpilot-ai-five.vercel.app/demo](https://riskpilot-ai-five.vercel.app/app)
 >
 > Pitch walkthrough: [working platform video](https://files.manuscdn.com/user_upload_by_module/session_file/310519663815895274/AxlHmfIynAgdoPel.webm)
+> 2½-minute product walkthrough: [docs/demo-video.mp4](docs/demo-video.mp4) (in-repo, no external link)
 
 # RiskPilot AI
 
 > **Agentic Payment-Risk Infrastructure for Digital Payments**
+
+<p align="center">
+  <video src="docs/demo-video.mp4" controls muted width="100%" style="max-width:1280px; border-radius:12px;"></video>
+</p>
+
+**Walkthrough video (2 min 42 s)** — the console, agentic investigation, governance, live API, Response Lab, Simulation Lab, and the audit trail, captured from the running platform.
 
 RiskPilot AI is a startup-style fintech SaaS for the AI Risk Manager track. It sits between a digital commerce system and the payment decision, investigating suspicious activity across customer, device, location, velocity, payment, behavior, and merchant signals before deciding **approve**, **review**, or **block** — then executing a controlled action and maintaining an auditable risk trail.
 
