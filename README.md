@@ -31,7 +31,7 @@ LIVE TEST MODE (FastAPI backend)
 → HMAC-SHA256 webhook verification → risk profile update → audit trail
 ```
 
-Demo Mode powers the guided `/demo` walkthrough so the judge experience starts instantly and is fully deterministic. Live Test Mode proves the same decisions run through a real API service — the `/live` page exercises it end-to-end. **Both modes use the same risk engine logic; Demo Mode embeds it client-side for reproducibility, Live Test Mode serves it over FastAPI with the ML model.**
+Demo Mode powers the guided `/demo` walkthrough so the judge experience starts instantly and is fully deterministic. Live Test Mode proves the same decisions run through a real API service — the `/live` page exercises it end-to-end. **There is exactly ONE risk engine: the FastAPI service (`server/risk_engine.py`). The Simulation Lab and Live API pages both call `POST /v1/risk/analyze` on the backend; if the backend is offline, the UI shows a clearly-labeled precomputed demo score instead — never a second scoring algorithm.**
 
 ## What is implemented
 
@@ -114,6 +114,31 @@ Risk event processor → update risk profile
 - **LLM:** Google Gemini / Groq (auto-detected) with a rule-based deterministic fallback — always available, no key required
 
 The frontend starts instantly with no backend required (Demo Mode). The full stack runs with `pnpm run api:dev` (Live Test Mode).
+
+## Verify in 60 seconds (for judges)
+
+Copy-paste against a running API (`pnpm run api:dev`, defaults to `http://localhost:8000`):
+
+```bash
+# 1. Health + honest integration status
+curl -s http://localhost:8000/v1/health | python3 -m json.tool | head -5
+curl -s http://localhost:8000/v1/integrations/status | python3 -c "import sys,json; d=json.load(sys.stdin); print('mode:', d['mode']['execution_mode']); print('engine:', d['risk_engine']['model_version']); print('agent tools:', d['agent']['tools'])"
+
+# 2. Critical ATO transaction → ML score, governed BLOCK, evidence, policy version
+curl -s -X POST http://localhost:8000/v1/risk/analyze -H "Content-Type: application/json" -d '{
+  "amount": 480000, "customer_id": "CUS_1029", "device_id": "DEV_8821_NEW", "location": "Mumbai",
+  "velocity": 12, "failed_attempts": 5, "account_age_days": 2, "merchant_id": "MERCH_NOVA",
+  "merchant_risk_score": 65, "behavioral_deviation": 0.82}' | python3 -c "import sys,json; d=json.load(sys.stdin); print('score:', d['risk_score'], d['risk_level']); print('engine rec:', d['ai_recommendation'], '| governed decision:', d['decision']); print('evidence:', len(d['evidence']), 'signals | policy:', d['policy_version'], '| model:', d['model_version'])"
+
+# 3. Full closed loop with per-step latency + honesty labels
+curl -s -X POST http://localhost:8000/v1/investigations/judge-run -H "Content-Type: application/json" -d '{}' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); [print('  %d. %-24s [%s] %.1fms' % (t['step'], t['name'], t['mode'], t['latency_ms'])) for t in d['timeline']]"
+
+# 4. Full test suite (risk engine, governance, webhook security, API contract)
+python -m pytest tests/ -q
+```
+
+Every claim in this README maps to one of those commands or to a file in this repository.
 
 ## Setup
 

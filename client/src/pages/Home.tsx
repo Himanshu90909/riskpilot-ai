@@ -243,7 +243,7 @@ function SimulationView() {
     setBusy(true);
     try {
       const response = await analyzeRisk(scenarioPayloads[active.name].payload);
-      setResult({ score: Number(response.risk_score ?? 0), decision: String(response.decision ?? "review").replace("step_up", "STEP-UP").toUpperCase(), exposure: scenarioPayloads[active.name].exposure, source: `Live backend risk engine (${response.model_version ?? "unknown"}, governance ${response.policy_version ?? "?"})`, reasons: Array.isArray(response.reasons) ? response.reasons.slice(0, 3).map(String) : [] });
+      setResult({ score: Number(response.risk_score ?? 0), decision: String(response.decision ?? "review").replace("step_up", "STEP-UP").toUpperCase(), exposure: scenarioPayloads[active.name].exposure, source: `Live backend risk engine (${response.model_version ?? "unknown"}, governance ${response.policy_version ?? "?"})`, reasons: (() => { const factors: unknown = response.risk_factors ?? response.reasons; return Array.isArray(factors) ? factors.slice(0, 3).map(String) : []; })() });
     } catch {
       // Backend unreachable: deterministic demo fallback, explicitly labeled — never presented as the live engine.
       setResult({ score: demoScores[active.name], decision: demoScores[active.name] >= 81 ? "BLOCK" : "REVIEW", exposure: scenarioPayloads[active.name].exposure, source: "Backend offline — deterministic demo fallback score", reasons: ["Backend risk engine unreachable", "Score shown is the precomputed demo scenario score"] });
